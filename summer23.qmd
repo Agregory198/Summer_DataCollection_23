@@ -1,0 +1,135 @@
+---
+title: "Summer 2023"
+author: "Alex Gregory"
+format: pdf
+editor: visual
+---
+
+## Import required packages
+
+```{r}
+library(ggplot2)
+library(tidyr)
+library(dplyr)
+# Temporal data
+library(c14bazAAR)
+library(rcarbon)
+```
+
+## Import Southern Africa Radiocarbon Database (SARD)
+
+```{r}
+SARD.df <- read.csv("SARD_Mar2021_14C.txt")
+
+SARD.df |>
+  rename(site = X.Site,
+         c14age = Date,
+         c14std = Uncertainty,
+         culture = Archaeological.Sub.chronology,
+         lat = DecdegS,
+         lon = DecdegE) |>
+  mutate_at(c("c14age", "c14std"), as.numeric) -> SARD
+
+```
+
+## Summed radiocarbon distributions
+
+I need to collect the radiocarbon data and calibrate it to create summed distributions showing contemporaneous occupations for Byneskranskop, Nelson Bay Cave, Hoffman's Cave, and Matjies River
+
+```{r}
+sa <- as.c14_date_list(SARD) |>
+  filter(site == "Byneskranskop 1" |
+           site == "Nelson Bay Cave" |
+           site == "Hoffman's Robberg Cave" |
+           site == "Matjies River") |>
+    rename(labnr = Lab.ID) |>
+  filter(is.na(c14age)==FALSE &
+          is.na(c14std)==FALSE) |>
+  c14bazAAR::remove_duplicates()
+
+sa.cal <- rcarbon::calibrate(x=sa$c14age, errors=sa$c14std)
+
+
+sa.spd = stackspd(sa.cal,timeRange=c(8000,1000), group=sa$site)
+# The plot below are identical. One plot has the legen, the other plot does not
+plot(sa.spd,type='multipanel', legend = T)
+plot(sa.spd,type='multipanel', legend = F)
+```
+
+## Summer data from 2023
+
+This section imports the data table from the recorded data for the summer of 2023 which includes information on core attributes from Hoffman's Cave and Matjies River.
+
+```{r}
+# Import core data
+data23 <- read.csv("Cores.csv", header=T)
+# remove the Unit designation from 2023 table
+
+# Reduce number of columns
+df <- data23[,4:(ncol(data23)-1)]
+# Set all categorical variables as factors
+df$SITE <- as.factor(df$SITE)
+df$CORETYPE <- as.factor(df$CORETYPE)
+df$RAWMATERIAL <- as.factor(df$RAWMATERIAL)
+df$ORIENTATION <- as.factor(df$ORIENTATION)
+df$CORTEX <- as.factor(df$CORTEX)
+df$STEPTERMINATIONS <- as.factor(df$STEPTERMINATIONS)
+df$PLATFORMNUMBER <- as.numeric(df$PLATFORMNUMBER)
+df$ROTATIONNUMBER <- as.numeric(df$ROTATIONNUMBER)
+df$PLATFORMFACET <- as.factor(df$PLATFORMFACET)
+df$EXPLOITESURFACE <- as.numeric(df$EXPLOITESURFACE)
+df$EXPLOITSURFACECONVERGENCE <- as.numeric(df$EXPLOITSURFACECONVERGENCE)
+df$SCARCOUNT <- as.numeric(df$SCARCOUNT)
+
+data23 |>
+  dplyr::select(-UNIT) -> data
+
+# Assign dates to Hoffman strata (same date for all)
+Hoffman.df <- df[which(df$SITE=="Hoffman"),]
+Hoffman.df$Date <- NA
+for(i in 1:nrow(Hoffman.df)){
+  Hoffman.df$Date <- "3500-4500BP"
+}
+
+# Assign date to Matjies strata
+Matjies.df <- df[which(df$SITE=="Matjies"),]
+Matjies.df$Date <- NA
+for(i in 1:nrow(Matjies.df)){
+    if(Matjies.df[i,"STRATA"] == "B"){
+      Matjies.df[i, "Date"] <- "2050BP"
+  } else if(Matjies.df[i,"STRATA"] == "C"){
+      Matjies.df[i, "Date"] <- "5400BP"
+  } else{
+      Matjies.df[i, "Date"] <- "8000BP"
+  }
+}
+
+
+# Combine dataframes with dates
+df.comb <- rbind(Hoffman.df, Matjies.df)
+
+```
+
+### Counts of cores and types of cores
+
+This section generates bar graphs for the number of cores I recorded from each site and the types of cores represented in both assemblages.
+
+```{r}
+
+df.comb |>
+  filter(SITE == "Hoffman" | SITE == "Matjies") |>
+  mutate(RAWMATERIAL = factor(RAWMATERIAL, 
+                       levels=c("Crystal Quartz", "Vein Quartz", "Quartzite",
+                                "Silcrete", "Chalcedony", "Ochre"))) |>
+  ggplot(aes(x = RAWMATERIAL, fill = SITE))+
+  geom_bar(stat="count", position="dodge")+
+  geom_text(stat='count', aes(label=..count..),size = 5,
+            vjust = -0.2, position = position_dodge(.9))
+
+df.comb |>
+  filter(SITE == "Hoffman" | SITE == "Matjies") |>
+  ggplot(aes(x = CORETYPE, fill = SITE))+
+  geom_bar(stat="count", position="dodge")+
+  geom_text(stat='count', aes(label=..count..),size = 5,
+            vjust = -0.2, position = position_dodge(.9))
+```
